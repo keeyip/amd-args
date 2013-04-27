@@ -58,32 +58,45 @@ SAMPLE INPUT:
 SAMPLE OUTPUT:
 
 ```
-    define(['jquery', 'underscore'], function myamdfunc (jquery, underscore) {return false;
+    define(['jquery', 'underscore'], function myamdfunc (jquery, underscore) {
+        return false;
     });
 
-    define(['jquery', 'underscore'], function myamdfunc (jquery, underscore) {return false;
+    define(['jquery', 'underscore'], function myamdfunc (jquery, underscore) {
+
+        return false;
     });
 
-    define(['jquery', 'underscore'], function myamdfunc (jquery, underscore) {return false;
+    define(['jquery', 'underscore'], function myamdfunc (jquery, underscore) {
+
+        return false;
     });
 
-    define(['jquery', 'underscore'], function (jquery, underscore) {return false;
+    define(['jquery', 'underscore'], function (jquery, underscore) {
+
+        return false;
     });
 
-    define(['jquery', 'underscore'], function (jquery, underscore) {return false;
+    define(['jquery', 'underscore'], function (jquery, underscore) {
+
+        return false;
     });
 
-    define(['jquery', 'underscore'], function (jquery, underscore) {return false;
+    define(['jquery', 'underscore'], function (jquery, underscore) {
+
+        return false;
     });
 
     define(['jquery', 'underscore',
         'more', 'api/stuff',
-    ], function (jquery, underscore, more, stuff) {return false;
+    ], function (jquery, underscore, more, stuff) {
+        return false;
     });
 
     define(['jquery', 'underscore',
         'more', 'api/stuff',
-    ], function (jquery, underscore, more, stuff) {return {
+    ], function (jquery, underscore, more, stuff) {
+        return {
             a: 'hi',
             b: 'hey',
             c: 'hihi'
