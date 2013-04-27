@@ -12,7 +12,8 @@ DISCLAIMER: Some code taken from UglifyJS 2
 SAMPLES
 ========
 SAMPLE INPUT:
-    ```
+    
+```
     define(['jquery', 'underscore'], function myamdfunc() {
         return false;
     });
@@ -52,10 +53,11 @@ SAMPLE INPUT:
             c: 'hihi'
         };
     });
-    ```
+```
 
 SAMPLE OUTPUT:
-    ```
+
+```
     define(['jquery', 'underscore'], function myamdfunc (jquery, underscore) {return false;
     });
 
@@ -87,7 +89,7 @@ SAMPLE OUTPUT:
             c: 'hihi'
         };
     });
-    ```
+```
 
 
 
