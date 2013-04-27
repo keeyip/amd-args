@@ -172,21 +172,20 @@ function print_ast(ast_root, code) {
             new_chunks.push(code.substring(cursor, parent.argnames.start.pos));
             cursor = parent.argnames.end.endpos;
             new_chunks.push(parent.argnames.value);
-            var indent = '';
+            var indent = '', nl = '\n';
             for (var x = parent.argnames.start.pos; x >= 0; x--) {
                 if (code[x] === '\n' || code[x] === '\r') {
                     for (var i = x+1; code[i] === ' ' || code[i] === '\t'; i++) {
                         indent += code[i];
                     }
+                    nl = code[x];
                     break;
                 }
             }
             parent.argnames.value = '';
-            if (indent) {
-                if (code[x-1] === '\n')
-                    new_chunks.push('\n');
-                new_chunks.push(code[x] + indent + (indent[0] === '\t' ? '\t' : INDENT));
-            }
+            if (code[x-1] === '\n')
+                new_chunks.push('\n');
+            new_chunks.push(nl + indent + (indent[0] === '\t' ? '\t' : INDENT));
         }
         else if (_.isObject(ast_node.start)) {
             new_chunks.push(code.substring(cursor, ast_node.start.pos));
