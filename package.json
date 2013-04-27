@@ -1,0 +1,24 @@
+{
+    "name": "amd-args",
+    "description": "Generate function arguments from AMD `define([..], function (omg_lots_of_stuff_in_here) {..})` calls",
+    "version": "0.0.1",
+    "engines": { "node" : ">=0.4.0" },
+    "maintainers": [{
+        "name": "Kee-Yip Chan",
+        "email": "keeyipchan@gmail.com"
+    }],
+    "repositories": [{
+        "type": "git",
+        "url": "https://github.com/keeyip/amd-args.git"
+    }],
+    "dependencies": {
+        "async"      : "~0.2.6",
+        "source-map" : "~0.1.7",
+        "optimist"   : "~0.3.5",
+        "lodash"     : ">= 1.2.0",
+        "uglify-js"  : ">= 2.2.5"
+    },
+    "bin": {
+        "amd-args" : "bin/amd-args"
+    }
+}

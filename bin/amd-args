@@ -1,0 +1,221 @@
+#! /usr/bin/env node
+// -*- js -*-
+
+"use strict";
+
+var INDENT = '    ';
+var _ = require("lodash");
+var assert = require("assert");
+var UglifyJS = require("uglify-js");
+var sys = require("util");
+var optimist = require("optimist");
+var fs = require("fs");
+var async = require("async");
+
+var CUSTOM_AST_ReplacementString = UglifyJS.DEFNODE('ReplacementString', 'value', {
+    $documentation: "Custom class for replacing a node with a string",
+    $propdoc: {
+        value: "[string] the replacement string",
+    },
+}, UglifyJS.AST_Node);
+
+var COMMANDS = {
+    args_for_amd: function(ast_root) {
+        ast_root.figure_out_scope();
+
+        return ast_root.transform(new UglifyJS.TreeTransformer(
+            null,
+            function after(ast_call) {
+                if (ast_call instanceof UglifyJS.AST_New) return;
+                if (!(ast_call instanceof UglifyJS.AST_Call)) return;
+
+                var found = false,
+                    str = ast_call.expression.print_to_string();
+                if (str === 'define') {
+                    var sym_define = ast_call.expression;
+                    if (sym_define.print_to_string() === 'define' &&
+                            (sym_define.undeclared() || sym_define.global())
+                    ) {
+                        assert(sym_define instanceof UglifyJS.AST_SymbolRef, '`define()` must be instanceof AST_SymbolRef');
+                        found = true;
+                    }
+                } else if (str === 'window.define') {
+                    found = true;
+                }
+                if (found) {
+                    var ast_args = ast_call.args;
+                    if (ast_args[0] instanceof UglifyJS.AST_Array &&
+                        ast_args[1] instanceof UglifyJS.AST_Function &&
+                        ast_args[1].body.length === 0
+                    ) {
+                        // Do nothing, this is just an empty function.
+                    }
+                    else if (ast_args[0] instanceof UglifyJS.AST_Array &&
+                        ast_args[1] instanceof UglifyJS.AST_Function &&
+                        ast_args[1].body.length > 0
+                    ) {
+                        if (ast_args[1].argnames.length > 0) {
+                            // TODO: confirm()
+                        }
+
+                        assert(ast_args[1].uses_arguments === false, 'define(deps,fn); `fn` must be a function expression that doe not use `arguments`');
+                        assert(_.every(ast_args[0].elements, function(ast_at_i, i) {
+                            return (ast_at_i instanceof UglifyJS.AST_String);
+                        }), 'define(deps,fn); `deps` must be an array of strings');
+                        var arg_aliases = _.map(ast_call.args[0].elements, function(ast_string) {
+                            return ast_string.value.split('/').pop();
+                        });
+                        var ast_funargs,
+                            collapsed_start = {
+                                pos: ast_args[1].start.pos,
+                                endpos: ast_args[1].start.pos
+                            },
+                            collapsed_end = {
+                                pos: ast_args[1].body[0].start.pos,
+                                endpos: ast_args[1].body[0].start.pos,
+                            };
+                        if (ast_args[1].name) {
+                            ast_args[1].name.end = ast_args[1].name.start = collapsed_start;
+                        }
+                        ast_args[1].argnames = _.extend(
+                            new CUSTOM_AST_ReplacementString({
+                                value: _.compact(['function', ast_args[1].name ? ast_args[1].name.name : null, '(' + arg_aliases.join(', ') + ')', '{']).join(' '),
+                                start: collapsed_start,
+                                end: collapsed_end,
+                            }),
+                            {
+                                // To support UglifyJS's print_to_string() and TreeWalker
+                                forEach: function(fn) {
+                                    if (ast_funargs) return ast_funargs.forEach(fn);
+                                    ast_funargs = _.map(ast_call.args[0].elements, function(ast_string, i) {
+                                        return new UglifyJS.AST_SymbolFunarg({
+                                            start: collapsed_start,
+                                            end: collapsed_end,
+                                            name: arg_aliases[i]
+                                        });
+                                    })
+                                    return ast_funargs.forEach(fn);
+                                },
+                                length: arg_aliases.length
+                            }
+                        );
+                        return ast_call;
+                    }
+                    else if (ast_args[0] instanceof UglifyJS.AST_Array &&
+                        ast_args[1] instanceof UglifyJS.AST_SymbolRef)
+                    {
+                    }
+                    else {
+                    }
+                }
+            }
+        ));
+    }
+}
+
+
+
+
+var ARGS = optimist
+    .usage('$0 file.js > file-new.js')
+    .wrap(80)
+    .argv
+
+normalize(ARGS);
+
+if (ARGS.version || ARGS.V) {
+    var json = require("../package.json");
+    sys.puts(json.name + ' ' + json.version);
+    process.exit(0);
+}
+
+var files = ARGS._.slice();
+if (files.length == 0) {
+    files = [ "-" ];
+}
+
+if (files.filter(function(el){ return el == "-" }).length > 1) {
+    sys.error("ERROR: Can read a single file from STDIN (two or more dashes specified)");
+    process.exit(1);
+}
+
+var TOPLEVEL = null;
+
+async.eachLimit(files, 1, function (file, cb) {
+    read_whole_file(file, function (err, code) {
+        if (err) {
+            sys.error("ERROR: can't read file: " + filename);
+            process.exit(1);
+        }
+        if (ARGS.p != null) {
+            file = file.replace(/^\/+/, "").split(/\/+/).slice(ARGS.p).join("/");
+        }
+        TOPLEVEL = UglifyJS.parse(code, {
+            filename: file,
+            toplevel: TOPLEVEL
+        });
+        cb(code);
+    });
+}, function (code) {
+    var new_ast = COMMANDS.args_for_amd(TOPLEVEL);
+    console.log(print_ast(new_ast, code));
+});
+
+function print_ast(ast_root, code) {
+    var new_chunks = [],
+        cursor = 0;
+
+    ast_root.walk(new UglifyJS.TreeWalker(function(ast_node){
+        var parent = this.parent();
+        if (parent instanceof UglifyJS.AST_Function && parent.argnames instanceof CUSTOM_AST_ReplacementString) {
+            if (!parent.argnames.value) return;
+            new_chunks.push(code.substring(cursor, parent.argnames.start.pos));
+            cursor = parent.argnames.end.endpos;
+            new_chunks.push(parent.argnames.value);
+            var indent = '';
+            for (var x = parent.argnames.start.pos; x >= 0; x--) {
+                if (code[x] === '\n' || code[x] === '\r') {
+                    for (var i = x+1; code[i] === ' ' || code[i] === '\t'; i++) {
+                        indent += code[i];
+                    }
+                    break;
+                }
+            }
+            parent.argnames.value = '';
+            if (indent) {
+                if (code[x-1] === '\n')
+                    new_chunks.push('\n');
+                new_chunks.push(code[x] + indent + (indent[0] === '\t' ? '\t' : INDENT));
+            }
+        }
+        else if (_.isObject(ast_node.start)) {
+            new_chunks.push(code.substring(cursor, ast_node.start.pos));
+            cursor = ast_node.start.pos;
+        }
+    }));
+
+    new_chunks.push(code.substr(cursor));
+    return new_chunks.join('');
+}
+
+// These are functions from uglify-js
+function normalize(o) {
+    for (var i in o) if (o.hasOwnProperty(i) && /-/.test(i)) {
+        o[i.replace(/-/g, "_")] = o[i];
+        delete o[i];
+    }
+}
+function read_whole_file(filename, cb) {
+    if (filename == "-") {
+        var chunks = [];
+        process.stdin.setEncoding('utf-8');
+        process.stdin.on('data', function (chunk) {
+            chunks.push(chunk);
+        }).on('end', function () {
+            cb(null, chunks.join(""));
+        });
+        process.openStdin();
+    } else {
+        fs.readFile(filename, "utf-8", cb);
+    }
+}
