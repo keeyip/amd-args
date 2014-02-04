@@ -19,95 +19,114 @@ var CUSTOM_AST_ReplacementString = UglifyJS.DEFNODE('ReplacementString', 'value'
     },
 }, UglifyJS.AST_Node);
 
+function pipe() {
+    var result,
+        suffix = _.head(arguments),
+        funcs = _.last(arguments);
+    _.every(funcs, function(list) {
+        var f = list[0];
+        result = f.apply(null, _.rest(list).concat(suffix));
+        if (!_.isUndefined(result)) {
+            suffix = [result];
+            return true;
+        }
+        return false;
+    });
+    return result;
+}
+
+function ifGlobalFunctionCall(name, ast_call) {
+    if (ast_call instanceof UglifyJS.AST_New) return;
+    if (!(ast_call instanceof UglifyJS.AST_Call)) return;
+
+    var str = ast_call.expression.print_to_string();
+    if (str === name) {
+        var sym_name = ast_call.expression;
+        if (sym_name.print_to_string() === name &&
+                (sym_name.undeclared() || sym_name.global())
+        ) {
+            assert(sym_name instanceof UglifyJS.AST_SymbolRef, '`'+name+'()` must be instanceof AST_SymbolRef');
+            return ast_call;
+        }
+    } else if (str === 'window.'+name) {
+        return ast_call;
+    }
+}
+function isNonEmptyAmdDefineSignature(ast_call) {
+    var ast_args = ast_call.args;
+    if (ast_args[0] instanceof UglifyJS.AST_Array &&
+        ast_args[1] instanceof UglifyJS.AST_Function &&
+        ast_args[1].body.length === 0
+    ) {
+        // Do nothing, this is just an empty function.
+    }
+    else if (ast_args[0] instanceof UglifyJS.AST_Array &&
+        ast_args[1] instanceof UglifyJS.AST_Function &&
+        ast_args[1].body.length > 0
+    ) {
+        return ast_call;
+    }
+    else if (ast_args[0] instanceof UglifyJS.AST_Array &&
+        ast_args[1] instanceof UglifyJS.AST_SymbolRef)
+    {
+    }
+    else {
+    }
+}
 var COMMANDS = {
     args_for_amd: function(ast_root) {
         ast_root.figure_out_scope();
 
         return ast_root.transform(new UglifyJS.TreeTransformer(
             null,
-            function after(ast_call) {
-                if (ast_call instanceof UglifyJS.AST_New) return;
-                if (!(ast_call instanceof UglifyJS.AST_Call)) return;
+            function after(node) {
+                pipe(node, [
+                    [ifGlobalFunctionCall, 'define'],
+                    [isNonEmptyAmdDefineSignature],
+                    [function(ast_call) {
+                        var ast_deps = ast_call.args[0],
+                            ast_cb = ast_call.args[1];
 
-                var found = false,
-                    str = ast_call.expression.print_to_string();
-                if (str === 'define') {
-                    var sym_define = ast_call.expression;
-                    if (sym_define.print_to_string() === 'define' &&
-                            (sym_define.undeclared() || sym_define.global())
-                    ) {
-                        assert(sym_define instanceof UglifyJS.AST_SymbolRef, '`define()` must be instanceof AST_SymbolRef');
-                        found = true;
-                    }
-                } else if (str === 'window.define') {
-                    found = true;
-                }
-                if (found) {
-                    var ast_args = ast_call.args;
-                    if (ast_args[0] instanceof UglifyJS.AST_Array &&
-                        ast_args[1] instanceof UglifyJS.AST_Function &&
-                        ast_args[1].body.length === 0
-                    ) {
-                        // Do nothing, this is just an empty function.
-                    }
-                    else if (ast_args[0] instanceof UglifyJS.AST_Array &&
-                        ast_args[1] instanceof UglifyJS.AST_Function &&
-                        ast_args[1].body.length > 0
-                    ) {
-                        if (ast_args[1].argnames.length > 0) {
-                            // TODO: confirm()
-                        }
-
-                        assert(ast_args[1].uses_arguments === false, 'define(deps,fn); `fn` must be a function expression that doe not use `arguments`');
-                        assert(_.every(ast_args[0].elements, function(ast_at_i, i) {
+                        assert(_.every(ast_deps.elements, function(ast_at_i, i) {
                             return (ast_at_i instanceof UglifyJS.AST_String);
                         }), 'define(deps,fn); `deps` must be an array of strings');
-                        var arg_aliases = _.map(ast_call.args[0].elements, function(ast_string) {
+
+                        var arg_aliases = _.map(ast_deps.elements, function(ast_string) {
                             return ast_string.value.split('/').pop();
                         });
-                        var ast_funargs,
-                            collapsed_start = {
-                                pos: ast_args[1].start.pos,
-                                endpos: ast_args[1].start.pos
+                        var collapsed_start = {
+                                pos: ast_cb.start.pos,
+                                endpos: ast_cb.start.pos
                             },
                             collapsed_end = {
-                                pos: ast_args[1].body[0].start.pos,
-                                endpos: ast_args[1].body[0].start.pos,
-                            };
-                        if (ast_args[1].name) {
-                            ast_args[1].name.end = ast_args[1].name.start = collapsed_start;
+                                pos: ast_cb.body[0].start.pos,
+                                endpos: ast_cb.body[0].start.pos,
+                            },
+                            ast_funargs = _.map(ast_deps.elements, function(ast_string, i) {
+                                return new UglifyJS.AST_SymbolFunarg({
+                                    start: collapsed_start,
+                                    end: collapsed_end,
+                                    name: arg_aliases[i]
+                                });
+                            });
+                        if (ast_cb.name) {
+                            ast_cb.name.end = ast_cb.name.start = collapsed_start;
                         }
-                        ast_args[1].argnames = _.extend(
+                        ast_cb.argnames = _.extend(
                             new CUSTOM_AST_ReplacementString({
-                                value: _.compact(['function', ast_args[1].name ? ast_args[1].name.name : null, '(' + arg_aliases.join(', ') + ')', '{']).join(' '),
+                                value: _.compact(['function', ast_cb.name ? ast_cb.name.name : null, '(' + arg_aliases.join(', ') + ')', '{']).join(' '),
                                 start: collapsed_start,
                                 end: collapsed_end,
                             }),
                             {
                                 // To support UglifyJS's print_to_string() and TreeWalker
-                                forEach: function(fn) {
-                                    if (ast_funargs) return ast_funargs.forEach(fn);
-                                    ast_funargs = _.map(ast_call.args[0].elements, function(ast_string, i) {
-                                        return new UglifyJS.AST_SymbolFunarg({
-                                            start: collapsed_start,
-                                            end: collapsed_end,
-                                            name: arg_aliases[i]
-                                        });
-                                    })
-                                    return ast_funargs.forEach(fn);
-                                },
+                                forEach: function(fn) { return ast_funargs.forEach(fn) },
                                 length: arg_aliases.length
                             }
                         );
                         return ast_call;
-                    }
-                    else if (ast_args[0] instanceof UglifyJS.AST_Array &&
-                        ast_args[1] instanceof UglifyJS.AST_SymbolRef)
-                    {
-                    }
-                    else {
-                    }
-                }
+                    }]
+                ]);
             }
         ));
     }

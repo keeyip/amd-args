@@ -37,3 +37,14 @@ define(['jquery', 'underscore',
         c: 'hihi'
     };
 });
+
+define([
+    'jquery', /* need this */ 'underscore',
+    'more', 'api/stuff'
+], function($,/*uh oh*/_) {
+    return {
+        a: 'hi',
+        b: 'hey',
+        c: 'hihi'
+    };
+});
